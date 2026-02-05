@@ -1,0 +1,35 @@
+{
+  "name": "nicolo-finetuning",
+  "version": "1.0.0",
+  "description": "",
+  "alias": {
+    "canvas": false,
+    "vega-lite": "vega-lite/build/index.js",
+    "vega-themes": "vega-themes/build/index.js",
+    "vega-tooltip": "vega-tooltip/build/index.js",
+    "danfojs": "danfojs/dist/danfojs-browser/src"
+  },
+  "scripts": {
+    "dev": "parcel src/index.html",
+    "build": "parcel build src/index.html",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.26.1",
+  "dependencies": {
+    "danfojs": "^1.2.0",
+    "parcel": "^2.16.4",
+    "tabulator-tables": "^6.2.5",
+    "vega": "^6.2.0",
+    "vega-embed": "^7.1.0",
+    "vega-lite": "^6.4.2",
+    "vega-themes": "^3.0.0",
+    "vega-tooltip": "^1.0.0"
+  },
+  "devDependencies": {
+    "buffer": "^6.0.3",
+    "process": "^0.11.10"
+  }
+}
