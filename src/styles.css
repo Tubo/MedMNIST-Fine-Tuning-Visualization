@@ -318,6 +318,26 @@ select {
   border-left: 2px solid rgba(79, 124, 172, 0.55);
 }
 
+.tabulator .tabulator-cell .metric-value {
+  display: inline-block;
+  margin-left: 6px;
+}
+
+.tabulator .tabulator-cell .rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(79, 124, 172, 0.14);
+  color: var(--accent-2);
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
 @media (max-width: 980px) {
   .app {
     grid-template-columns: 1fr;

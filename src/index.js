@@ -96,10 +96,11 @@ const buildColumns = (datasets, datasetKeys, tableRows) => {
           if (b.value !== a.value) return b.value - a.value;
           return String(a.strategy).localeCompare(String(b.strategy));
         });
-      highlightMap.set(
-        field,
-        new Set(ranked.slice(0, 3).map(({ strategy }) => strategy))
-      );
+      const topRankings = new Map();
+      ranked.slice(0, 3).forEach(({ strategy }, index) => {
+        topRankings.set(strategy, index + 1);
+      });
+      highlightMap.set(field, topRankings);
     });
   });
 
@@ -111,18 +112,24 @@ const buildColumns = (datasets, datasetKeys, tableRows) => {
 
   const formatMetricWithHighlight = (cell) => {
     const output = formatMetric(cell);
+    if (!output) return output;
     const field = cell.getField();
     const strategy = cell.getRow().getData().strategy;
     const highlightSet = highlightMap.get(field);
     const element = cell.getElement();
+    const rank = highlightSet?.get(strategy);
     if (element) {
-      if (highlightSet && highlightSet.has(strategy)) {
+      if (rank) {
         element.classList.add("cell-top-rank");
       } else {
         element.classList.remove("cell-top-rank");
       }
     }
-    return output;
+    if (!rank) return output;
+    return `
+      <span class="rank-badge" aria-label="Rank ${rank}">${rank}</span>
+      <span class="metric-value">${output}</span>
+    `;
   };
 
   const columns = [
