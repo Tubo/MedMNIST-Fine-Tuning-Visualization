@@ -22,14 +22,17 @@
     <section class="grid">
       <div class="card">
         <div class="card-header">
-          <h3>Metric Heatmap</h3>
-          <div class="field">
-            <label for="metric-selector">Metric:</label>
-            <select id="metric-selector">
-              <option value="test_acc">Accuracy</option>
-              <option value="test_auc">AUC</option>
-              <option value="test_f1_macro">F1 Macro</option>
-            </select>
+          <h3>Strategy Performance</h3>
+          <div class="controls">
+            <button id="reset-datasets" type="button" class="btn-reset">Reset Datasets</button>
+            <div class="field">
+              <label for="metric-selector">Metric:</label>
+              <select id="metric-selector">
+                <option value="test_acc">Accuracy</option>
+                <option value="test_auc">AUC</option>
+                <option value="test_f1_macro">F1 Macro</option>
+              </select>
+            </div>
           </div>
         </div>
         <div id="heatmap-chart" class="chart"></div>

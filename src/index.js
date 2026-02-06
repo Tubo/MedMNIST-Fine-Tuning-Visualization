@@ -12,6 +12,42 @@ const METRICS = [
   { key: "test_f1_macro", label: "F1" }
 ];
 
+const METRIC_SUFFIX_TO_KEY = {
+  acc: "test_acc",
+  auc: "test_auc",
+  f1: "test_f1_macro"
+};
+
+const STRATEGY_ORDER = [
+  "LP",
+  "partial_start_20",
+  "partial_end_20",
+  "partial_start_40",
+  "partial_end_40",
+  "partial_start_60",
+  "partial_end_60",
+  "full"
+];
+
+const BACKBONE_SHAPES = {
+  "densenet121": "circle",
+  "resnet18": "square",
+  "swin_tiny_patch4_window7_224": "triangle-up",
+  "vit_base_patch16_224": "diamond"
+};
+
+/* ── Interaction state ─────────────────────────────────────────────── */
+const interactionState = {
+  visibleDatasets: new Set(),
+  allDatasets: [],
+  currentMetric: "test_acc",
+  currentBackbone: null,
+  vegaView: null,
+  // Reverse map: sanitized key → original dataset name
+  datasetKeyToName: new Map(),
+};
+
+/* ── Helpers ───────────────────────────────────────────────────────── */
 const resolveDataUrl = (defaultUrl) => {
   const importMap = document.querySelector('script[type="importmap"]');
   if (!importMap) return defaultUrl.toString();
@@ -35,6 +71,7 @@ const toNumberSeries = (series) => {
   return new dfd.Series(values, { index: series.index });
 };
 
+/* ── Pivot ─────────────────────────────────────────────────────────── */
 const buildPivot = (rows) => {
   const datasetSet = new Set();
   const strategySet = new Set();
@@ -50,6 +87,12 @@ const buildPivot = (rows) => {
   const datasetKeys = new Map(
     datasets.map((dataset) => [dataset, dataset.replace(/[^a-z0-9]+/gi, "_")])
   );
+
+  // Build reverse map
+  interactionState.datasetKeyToName.clear();
+  datasetKeys.forEach((key, name) => {
+    interactionState.datasetKeyToName.set(key, name);
+  });
 
   const tableRows = strategies.map((strategy) => {
     const row = { strategy };
@@ -80,7 +123,8 @@ const buildPivot = (rows) => {
   return { datasets, datasetKeys, tableRows };
 };
 
-const buildColumns = (datasets, datasetKeys, tableRows) => {
+/* ── Columns (with interactive headers) ────────────────────────────── */
+const buildColumns = (datasets, datasetKeys, tableRows, onDatasetToggle, onMetricClick) => {
   const metricColumns = METRICS.map(({ label }) => ({
     title: label,
     fieldSuffix: label.toLowerCase()
@@ -126,6 +170,15 @@ const buildColumns = (datasets, datasetKeys, tableRows) => {
       } else {
         element.classList.remove("cell-top-rank");
       }
+
+      // Add hidden-dataset class if this column's dataset is hidden
+      const datasetKey = field.split("__")[0];
+      const datasetName = interactionState.datasetKeyToName.get(datasetKey);
+      if (datasetName && !interactionState.visibleDatasets.has(datasetName)) {
+        element.classList.add("cell-dataset-hidden");
+      } else {
+        element.classList.remove("cell-dataset-hidden");
+      }
     }
     if (!rank) return output;
     return `
@@ -146,84 +199,194 @@ const buildColumns = (datasets, datasetKeys, tableRows) => {
 
   datasets.forEach((dataset) => {
     const datasetKey = datasetKeys.get(dataset);
+    const isHidden = !interactionState.visibleDatasets.has(dataset);
+
     columns.push({
       title: dataset,
-      columns: metricColumns.map(({ title, fieldSuffix }) => ({
-        title,
-        field: `${datasetKey}__${fieldSuffix}`,
-        hozAlign: "right",
-        sorter: "number",
-        formatter: formatMetricWithHighlight,
-        width: 96
-      }))
+      cssClass: `dataset-col-group${isHidden ? " dataset-hidden" : ""}`,
+      headerClick: (e, column) => {
+        e.stopPropagation();
+        onDatasetToggle(dataset, column);
+      },
+      columns: metricColumns.map(({ title, fieldSuffix }) => {
+        const metricKey = METRIC_SUFFIX_TO_KEY[fieldSuffix];
+        const isActiveMetric = metricKey === interactionState.currentMetric;
+        return {
+          title,
+          field: `${datasetKey}__${fieldSuffix}`,
+          hozAlign: "right",
+          sorter: "number",
+          formatter: formatMetricWithHighlight,
+          width: 96,
+          cssClass: `metric-col${isActiveMetric ? " metric-col-active" : ""}`,
+          headerClick: (e, column) => {
+            e.stopPropagation();
+            onMetricClick(metricKey, column);
+          }
+        };
+      })
     });
   });
 
   return columns;
 };
 
-const buildHeatmapData = (rows, metricKey) => {
-  const { datasets, datasetKeys, tableRows } = buildPivot(rows);
-  const heatmapData = [];
+/* ── Chart data ────────────────────────────────────────────────────── */
+const buildLineChartData = (rows, metricKey) => {
+  const lineChartData = [];
+  const metric = METRICS.find(({ key }) => key === metricKey);
+  if (!metric) return lineChartData;
 
-  tableRows.forEach((row) => {
-    datasets.forEach((dataset) => {
-      const datasetKey = datasetKeys.get(dataset);
-      const metric = METRICS.find(({ key }) => key === metricKey);
-      if (!metric) return;
+  rows.forEach((row) => {
+    if (!row.dataset || !row.strategy || !row.backbone) return;
 
-      const fieldKey = `${datasetKey}__${metric.label.toLowerCase()}`;
-      const value = row[fieldKey];
+    // Filter by visible datasets
+    if (!interactionState.visibleDatasets.has(row.dataset)) return;
 
-      if (Number.isFinite(value)) {
-        heatmapData.push({
-          strategy: row.strategy,
-          dataset,
-          value
-        });
-      }
-    });
+    const metricFieldKey = row.metricKeys?.[metricKey] ?? metricKey;
+    const value = row[metricFieldKey];
+
+    if (Number.isFinite(value) && value > 0) {
+      lineChartData.push({
+        strategy: row.strategy,
+        dataset: row.dataset,
+        backbone: row.backbone,
+        value
+      });
+    }
   });
 
-  return heatmapData;
+  return lineChartData;
 };
 
-const buildHeatmapSpec = (data, metricKey) => {
+/* ── Chart spec (with hover selection support) ─────────────────────── */
+const buildLineChartSpec = (data, metricKey, chartWidth, activeBackbone) => {
   const metric = METRICS.find(({ key }) => key === metricKey);
   const metricLabel = metric ? metric.label : "Metric";
 
+  const strategySort = [...STRATEGY_ORDER];
+
+  // Determine if we have a specific backbone highlighted
+  const hasBackboneHighlight = activeBackbone != null;
+
+  // Build conditional opacity for backbone highlighting
+  const lineOpacity = hasBackboneHighlight
+    ? {
+      condition: { test: `datum.backbone === '${activeBackbone}'`, value: 1 },
+      value: 0.2
+    }
+    : { value: 0.8 };
+
+  const pointOpacity = hasBackboneHighlight
+    ? {
+      condition: { test: `datum.backbone === '${activeBackbone}'`, value: 1 },
+      value: 0.15
+    }
+    : { value: 0.8 };
+
   return {
     $schema: "https://vega.github.io/schema/vega-lite/v5.json",
-    width: 800,
-    height: 400,
+    width: chartWidth,
+    height: 800,
     autosize: { type: "fit", contains: "padding" },
     data: { values: data },
-    mark: { type: "rect", tooltip: true },
-    encoding: {
-      x: {
-        field: "dataset",
-        type: "nominal",
-        title: "Dataset",
-        axis: { labelAngle: -45, labelLimit: 120 }
+    layer: [
+      {
+        mark: { type: "line", point: false },
+        encoding: {
+          x: {
+            field: "strategy",
+            type: "ordinal",
+            title: "Strategy",
+            scale: { domain: strategySort },
+            axis: { labelAngle: -45, labelLimit: 120 }
+          },
+          y: {
+            field: "value",
+            type: "quantitative",
+            title: metricLabel,
+            scale: { zero: false }
+          },
+          color: {
+            field: "dataset",
+            type: "nominal",
+            title: "Dataset",
+            scale: { scheme: "tableau10" }
+          },
+          detail: [
+            { field: "dataset", type: "nominal" },
+            { field: "backbone", type: "nominal" }
+          ],
+          opacity: lineOpacity,
+          strokeWidth: hasBackboneHighlight
+            ? {
+              condition: { test: `datum.backbone === '${activeBackbone}'`, value: 2.5 },
+              value: 1
+            }
+            : { value: 1.5 }
+        }
       },
-      y: {
-        field: "strategy",
-        type: "nominal",
-        title: "Strategy"
-      },
-      color: {
-        field: "value",
-        type: "quantitative",
-        title: metricLabel,
-        scale: { scheme: "blues" },
-        legend: { orient: "right" }
-      },
-      tooltip: [
-        { field: "strategy", type: "nominal", title: "Strategy" },
-        { field: "dataset", type: "nominal", title: "Dataset" },
-        { field: "value", type: "quantitative", title: metricLabel, format: ".4f" }
-      ]
-    },
+      {
+        // Base points layer with hover selection
+        params: [
+          {
+            name: "hoveredPoint",
+            select: {
+              type: "point",
+              fields: ["strategy", "dataset"],
+              on: "pointerover",
+              clear: "pointerout"
+            }
+          }
+        ],
+        mark: { type: "point", filled: true, size: 80 },
+        encoding: {
+          x: {
+            field: "strategy",
+            type: "ordinal",
+            scale: { domain: strategySort }
+          },
+          y: {
+            field: "value",
+            type: "quantitative"
+          },
+          color: {
+            field: "dataset",
+            type: "nominal",
+            scale: { scheme: "tableau10" },
+            legend: null
+          },
+          shape: {
+            field: "backbone",
+            type: "nominal",
+            title: "Backbone",
+            scale: {
+              domain: Object.keys(BACKBONE_SHAPES),
+              range: Object.values(BACKBONE_SHAPES)
+            }
+          },
+          opacity: pointOpacity,
+          size: {
+            condition: { param: "hoveredPoint", value: 220 },
+            value: hasBackboneHighlight ? 60 : 80
+          },
+          stroke: {
+            condition: { param: "hoveredPoint", value: "#1c2732" },
+            value: null
+          },
+          strokeWidth: {
+            condition: { param: "hoveredPoint", value: 2 },
+            value: 0
+          },
+          tooltip: [
+            { field: "strategy", type: "nominal", title: "Strategy" },
+            { field: "dataset", type: "nominal", title: "Dataset" },
+            { field: "backbone", type: "nominal", title: "Backbone" },
+            { field: "value", type: "quantitative", title: metricLabel, format: ".4f" }
+          ]
+        }
+      }
+    ],
     config: {
       axis: { labelFontSize: 11, titleFontSize: 12 },
       legend: { labelFontSize: 11, titleFontSize: 12 }
@@ -231,30 +394,82 @@ const buildHeatmapSpec = (data, metricKey) => {
   };
 };
 
-const renderHeatmap = (rows, metricKey = "test_acc") => {
+/* ── Render chart ──────────────────────────────────────────────────── */
+const renderLineChart = (rows, metricKey = "test_acc", activeBackbone = null) => {
   const chartElement = document.querySelector("#heatmap-chart");
   if (!chartElement) return;
 
   if (!rows.length) {
-    chartElement.textContent = "No data available for heatmap.";
+    chartElement.textContent = "No data available for chart.";
+    interactionState.vegaView = null;
     return;
   }
 
-  const data = buildHeatmapData(rows, metricKey);
+  const data = buildLineChartData(rows, metricKey);
   if (!data.length) {
-    chartElement.textContent = "No data available for heatmap.";
+    chartElement.textContent = "No data available for chart.";
+    interactionState.vegaView = null;
     return;
   }
 
-  const spec = buildHeatmapSpec(data, metricKey);
+  const spec = buildLineChartSpec(data, metricKey, chartElement.clientWidth - 40, activeBackbone);
 
   embed(chartElement, spec, { actions: { source: false, compiled: false, editor: false } })
+    .then((result) => {
+      interactionState.vegaView = result.view;
+    })
     .catch((error) => {
-      console.error("Failed to render heatmap", error);
-      chartElement.textContent = "Failed to render heatmap.";
+      console.error("Failed to render line chart", error?.message ?? error);
+      chartElement.textContent = "Failed to render line chart.";
+      interactionState.vegaView = null;
     });
 };
 
+/* ── Highlight chart point from table hover ────────────────────────── */
+const highlightChartPoint = (strategy, datasetName) => {
+  const view = interactionState.vegaView;
+  if (!view) return;
+
+  try {
+    if (!strategy || !datasetName) {
+      // Clear selection
+      view.signal("hoveredPoint_tuple", null);
+      view.signal("hoveredPoint", null);
+      view.runAsync();
+      return;
+    }
+
+    // Find data points matching our hover target
+    const allData = view.data("data_0");
+    if (!allData) return;
+
+    const matchingTuples = [];
+    allData.forEach((datum) => {
+      if (datum.strategy === strategy && datum.dataset === datasetName) {
+        matchingTuples.push({
+          values: [datum.strategy, datum.dataset],
+        });
+      }
+    });
+
+    if (matchingTuples.length > 0) {
+      // Set selection to highlight matching points
+      view.signal("hoveredPoint_tuple", matchingTuples);
+      view.signal("hoveredPoint", {
+        vlPoint: { or: matchingTuples.map((t) => ({ strategy: t.values[0], dataset: t.values[1] })) },
+        fields: [
+          { field: "strategy", channel: "x", type: "E" },
+          { field: "dataset", channel: "color", type: "E" }
+        ]
+      });
+      view.runAsync();
+    }
+  } catch (err) {
+    // Silently handle signal errors - the chart may not have the signal yet
+  }
+};
+
+/* ── Tabs ──────────────────────────────────────────────────────────── */
 const renderTabs = (backbones, onSelect) => {
   const tabBar = document.querySelector("#backbone-tabs");
   if (!tabBar) return;
@@ -312,7 +527,8 @@ const renderTabs = (backbones, onSelect) => {
   });
 };
 
-const renderTable = (rows) => {
+/* ── Table ─────────────────────────────────────────────────────────── */
+const renderTable = (rows, onChartUpdate) => {
   const tableElement = document.querySelector("#data-table");
   if (!tableElement) return;
 
@@ -335,12 +551,110 @@ const renderTable = (rows) => {
     return;
   }
 
-  const columns = buildColumns(datasets, datasetKeys, tableRows);
+  // Initialize visible datasets if empty (first render or tab switch)
+  if (interactionState.allDatasets.length === 0 || interactionState.visibleDatasets.size === 0) {
+    interactionState.allDatasets = datasets;
+    interactionState.visibleDatasets = new Set(datasets);
+  }
+
+  /* ── Dataset toggle handler ──────────────────────────────────────── */
+  const onDatasetToggle = (datasetName, column) => {
+    const isVisible = interactionState.visibleDatasets.has(datasetName);
+
+    // Prevent hiding the last visible dataset
+    if (isVisible && interactionState.visibleDatasets.size <= 1) return;
+
+    if (isVisible) {
+      interactionState.visibleDatasets.delete(datasetName);
+    } else {
+      interactionState.visibleDatasets.add(datasetName);
+    }
+
+    // Update column header visual
+    applyDatasetHeaderStyles();
+
+    // Update cell styles
+    if (window.__tabulatorTable) {
+      window.__tabulatorTable.getRows().forEach((row) => {
+        row.getCells().forEach((cell) => {
+          const field = cell.getField();
+          if (!field || field === "strategy") return;
+          const key = field.split("__")[0];
+          const name = interactionState.datasetKeyToName.get(key);
+          if (name) {
+            const el = cell.getElement();
+            if (interactionState.visibleDatasets.has(name)) {
+              el.classList.remove("cell-dataset-hidden");
+            } else {
+              el.classList.add("cell-dataset-hidden");
+            }
+          }
+        });
+      });
+    }
+
+    // Re-render chart with filtered data
+    onChartUpdate();
+  };
+
+  /* ── Metric click handler ────────────────────────────────────────── */
+  const onMetricClick = (metricKey) => {
+    if (!metricKey || metricKey === interactionState.currentMetric) return;
+
+    interactionState.currentMetric = metricKey;
+
+    // Sync the dropdown
+    const dropdown = document.querySelector("#metric-selector");
+    if (dropdown) dropdown.value = metricKey;
+
+    // Update metric column active styles
+    applyMetricHeaderStyles();
+
+    // Re-render chart
+    onChartUpdate();
+  };
+
+  const columns = buildColumns(datasets, datasetKeys, tableRows, onDatasetToggle, onMetricClick);
+
+  /* ── Cell hover handlers ─────────────────────────────────────────── */
+  const cellMouseEnter = (e, cell) => {
+    const field = cell.getField();
+    if (!field || field === "strategy") return;
+
+    const parts = field.split("__");
+    if (parts.length < 2) return;
+
+    const datasetKey = parts[0];
+    const datasetName = interactionState.datasetKeyToName.get(datasetKey);
+    if (!datasetName) return;
+
+    // Don't highlight if dataset is hidden
+    if (!interactionState.visibleDatasets.has(datasetName)) return;
+
+    const rowData = cell.getRow().getData();
+    const strategy = rowData.strategy;
+
+    // Visual highlight on cell
+    cell.getElement().classList.add("cell-hover-highlight");
+
+    // Highlight corresponding point in chart
+    highlightChartPoint(strategy, datasetName);
+  };
+
+  const cellMouseLeave = (e, cell) => {
+    cell.getElement().classList.remove("cell-hover-highlight");
+    highlightChartPoint(null, null);
+  };
 
   if (window.__tabulatorTable) {
     window.__tabulatorTable.setColumns(columns);
     window.__tabulatorTable.replaceData(tableRows);
     window.__tabulatorTable.setPage(1);
+    // Re-apply styles after data update
+    setTimeout(() => {
+      applyDatasetHeaderStyles();
+      applyMetricHeaderStyles();
+    }, 50);
     return;
   }
 
@@ -351,10 +665,63 @@ const renderTable = (rows) => {
     height: 360,
     pagination: "local",
     paginationSize: 8,
-    columns
+    columns,
+    cellMouseEnter,
+    cellMouseLeave,
+  });
+
+  // Apply styles once table is built
+  window.__tabulatorTable.on("tableBuilt", () => {
+    applyDatasetHeaderStyles();
+    applyMetricHeaderStyles();
   });
 };
 
+/* ── Style helpers (applied after render) ──────────────────────────── */
+const applyDatasetHeaderStyles = () => {
+  // Column groups are not returned by getColumns() in Tabulator;
+  // query the DOM directly for group header elements.
+  const groupHeaders = document.querySelectorAll(".tabulator-col-group");
+  groupHeaders.forEach((el) => {
+    const titleEl = el.querySelector(":scope > .tabulator-col-content .tabulator-col-title");
+    const title = titleEl?.textContent?.trim();
+    if (!title) return;
+
+    el.classList.add("dataset-col-group");
+    if (interactionState.visibleDatasets.has(title)) {
+      el.classList.remove("dataset-hidden");
+    } else {
+      el.classList.add("dataset-hidden");
+    }
+  });
+};
+
+const applyMetricHeaderStyles = () => {
+  if (!window.__tabulatorTable) return;
+
+  // Leaf columns are accessible via getColumns()
+  const leafCols = window.__tabulatorTable.getColumns();
+  leafCols.forEach((col) => {
+    const field = col.getField();
+    if (!field || field === "strategy") return;
+
+    const suffix = field.split("__")[1];
+    if (!suffix) return;
+
+    const metricKey = METRIC_SUFFIX_TO_KEY[suffix];
+    const el = col.getElement();
+    if (!el) return;
+
+    el.classList.add("metric-col");
+    if (metricKey === interactionState.currentMetric) {
+      el.classList.add("metric-col-active");
+    } else {
+      el.classList.remove("metric-col-active");
+    }
+  });
+};
+
+/* ── Init ──────────────────────────────────────────────────────────── */
 const init = async () => {
   const tableElement = document.querySelector("#data-table");
   if (tableElement) tableElement.textContent = "Loading data...";
@@ -399,7 +766,7 @@ const init = async () => {
       working.addColumn("strategy_group", new dfd.Series(derivedStrategies), { inplace: true });
 
       const grouped = working
-        .groupby(["strategy_group", "dataset"])
+        .groupby(["strategy_group", "dataset", "backbone"])
         .col(METRICS.map(({ key }) => key))
         .mean();
 
@@ -429,29 +796,55 @@ const init = async () => {
       return dataCache.get(key);
     };
 
-    let currentBackbone = null;
-    let currentMetric = "test_acc";
-
     const updateViews = (backbone, metric) => {
       const rows = getRows(backbone);
-      renderTable(rows);
-      renderHeatmap(rows, metric);
+      const onChartUpdate = () => {
+        renderLineChart(rows, interactionState.currentMetric, interactionState.currentBackbone);
+      };
+      renderTable(rows, onChartUpdate);
+      renderLineChart(rows, metric, interactionState.currentBackbone);
     };
 
+    /* ── Metric selector dropdown ────────────────────────────────────── */
     const metricSelector = document.querySelector("#metric-selector");
     if (metricSelector) {
       metricSelector.addEventListener("change", (event) => {
-        currentMetric = event.target.value;
-        updateViews(currentBackbone, currentMetric);
+        interactionState.currentMetric = event.target.value;
+        applyMetricHeaderStyles();
+        const rows = getRows(interactionState.currentBackbone);
+        renderLineChart(rows, interactionState.currentMetric, interactionState.currentBackbone);
       });
     }
 
+    /* ── Reset datasets button ───────────────────────────────────────── */
+    const resetButton = document.querySelector("#reset-datasets");
+    if (resetButton) {
+      resetButton.addEventListener("click", () => {
+        interactionState.visibleDatasets = new Set(interactionState.allDatasets);
+        applyDatasetHeaderStyles();
+        // Update cell styles
+        if (window.__tabulatorTable) {
+          window.__tabulatorTable.getRows().forEach((row) => {
+            row.getCells().forEach((cell) => {
+              cell.getElement().classList.remove("cell-dataset-hidden");
+            });
+          });
+        }
+        const rows = getRows(interactionState.currentBackbone);
+        renderLineChart(rows, interactionState.currentMetric, interactionState.currentBackbone);
+      });
+    }
+
+    /* ── Backbone tabs ───────────────────────────────────────────────── */
     renderTabs(backbones, (backbone) => {
-      currentBackbone = backbone;
-      updateViews(backbone, currentMetric);
+      interactionState.currentBackbone = backbone;
+      // Reset visible datasets on tab switch
+      interactionState.allDatasets = [];
+      interactionState.visibleDatasets.clear();
+      updateViews(backbone, interactionState.currentMetric);
     });
-    
-    updateViews(null, currentMetric);
+
+    updateViews(null, interactionState.currentMetric);
   } catch (error) {
     console.error("Failed to load dataset", error);
     if (tableElement) {
