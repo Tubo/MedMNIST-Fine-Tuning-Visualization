@@ -13,7 +13,6 @@
   --shadow: 0 24px 40px -30px rgba(32, 43, 56, 0.45);
   --radius: 18px;
   --font-sans: "Space Grotesk", "Newsreader", serif;
-  --font-serif: "Newsreader", serif;
 }
 
 * {
@@ -133,10 +132,6 @@ select {
   border-bottom: 1px solid rgba(34, 49, 63, 0.08);
 }
 
-.tabulator .tabulator-row.tabulator-selected {
-  background: rgba(255, 138, 91, 0.12);
-}
-
 .tabulator .tabulator-cell.cell-top-rank {
   background: rgba(79, 124, 172, 0.08);
   border-left: 2px solid rgba(79, 124, 172, 0.55);
@@ -241,8 +236,4 @@ select {
   }
 }
 
-@media (max-width: 640px) {
-  .content {
-    padding: 20px;
-  }
-}
+

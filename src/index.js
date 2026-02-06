@@ -31,9 +31,25 @@ const STRATEGY_ORDER = [
 
 const BACKBONE_SHAPES = {
   "densenet121": "circle",
-  "resnet18": "square",
-  "swin_tiny_patch4_window7_224": "triangle-up",
-  "vit_base_patch16_224": "diamond"
+  "swin_tiny_patch4_window7_224": "square",
+};
+
+const EXCLUDED_BACKBONES = new Set(["resnet18", "vit_base_patch16_224"]);
+
+/* Stable color palette for datasets (tableau10 hex values) */
+const TABLEAU10 = [
+  "#4e79a7", "#f28e2c", "#e15759", "#76b7b2", "#59a14f",
+  "#edc949", "#af7aa1", "#ff9da7", "#9c755f", "#bab0ab"
+];
+
+/** Build a fixed dataset→color map so colours never shuffle. */
+const buildDatasetColorMap = (datasets) => {
+  const map = new Map();
+  const sorted = [...datasets].sort();
+  sorted.forEach((name, i) => {
+    map.set(name, TABLEAU10[i % TABLEAU10.length]);
+  });
+  return map;
 };
 
 /* ── Interaction state ─────────────────────────────────────────────── */
@@ -42,9 +58,15 @@ const interactionState = {
   allDatasets: [],
   currentMetric: "test_acc",
   currentBackbone: null,
-  vegaView: null,
   // Reverse map: sanitized key → original dataset name
   datasetKeyToName: new Map(),
+  // Stored chart width to prevent shrinking on re-render
+  chartWidth: null,
+  // Fixed color mapping: dataset name → color
+  datasetColorMap: new Map(),
+  // Current table-driven highlight state
+  highlightedDataset: null,
+  highlightedStrategy: null,
 };
 
 /* ── Helpers ───────────────────────────────────────────────────────── */
@@ -269,20 +291,124 @@ const buildLineChartSpec = (data, metricKey, chartWidth, activeBackbone) => {
   // Determine if we have a specific backbone highlighted
   const hasBackboneHighlight = activeBackbone != null;
 
-  // Build conditional opacity for backbone highlighting
-  const lineOpacity = hasBackboneHighlight
-    ? {
-      condition: { test: `datum.backbone === '${activeBackbone}'`, value: 1 },
-      value: 0.2
-    }
-    : { value: 0.8 };
+  // Fixed color domain and range from the stable color map
+  const colorMap = interactionState.datasetColorMap;
+  const colorDomain = [...colorMap.keys()];
+  const colorRange = colorDomain.map((d) => colorMap.get(d));
 
-  const pointOpacity = hasBackboneHighlight
-    ? {
-      condition: { test: `datum.backbone === '${activeBackbone}'`, value: 1 },
-      value: 0.15
+  // Table-driven highlight state
+  const hlDataset = interactionState.highlightedDataset;
+  const hlStrategy = interactionState.highlightedStrategy;
+  const hasTableHighlight = hlDataset != null;
+  const hasCellHighlight = hlDataset != null && hlStrategy != null;
+
+  // Build conditional opacity for backbone highlighting
+  const buildLineOpacity = () => {
+    if (hasCellHighlight) {
+      return {
+        condition: {
+          test: `datum.dataset === '${hlDataset}'`,
+          value: 0.8
+        },
+        value: 0.15
+      };
     }
-    : { value: 0.8 };
+    if (hasTableHighlight) {
+      return {
+        condition: {
+          test: `datum.dataset === '${hlDataset}'`,
+          value: 1
+        },
+        value: 0.15
+      };
+    }
+    if (hasBackboneHighlight) {
+      return {
+        condition: { test: `datum.backbone === '${activeBackbone}'`, value: 1 },
+        value: 0.2
+      };
+    }
+    return { value: 0.8 };
+  };
+
+  const buildPointOpacity = () => {
+    if (hasCellHighlight) {
+      return {
+        condition: {
+          test: `datum.strategy === '${hlStrategy}' && datum.dataset === '${hlDataset}'`,
+          value: 1
+        },
+        value: 0.12
+      };
+    }
+    if (hasTableHighlight) {
+      return {
+        condition: {
+          test: `datum.dataset === '${hlDataset}'`,
+          value: 1
+        },
+        value: 0.12
+      };
+    }
+    if (hasBackboneHighlight) {
+      return {
+        condition: { test: `datum.backbone === '${activeBackbone}'`, value: 1 },
+        value: 0.15
+      };
+    }
+    return { value: 0.8 };
+  };
+
+  const buildPointSize = () => {
+    if (hasCellHighlight) {
+      return {
+        condition: {
+          test: `datum.strategy === '${hlStrategy}' && datum.dataset === '${hlDataset}'`,
+          value: 260
+        },
+        value: 50
+      };
+    }
+    if (hasTableHighlight) {
+      return {
+        condition: {
+          test: `datum.dataset === '${hlDataset}'`,
+          value: 160
+        },
+        value: 50
+      };
+    }
+    return { value: hasBackboneHighlight ? 60 : 80 };
+  };
+
+  const buildPointStroke = () => {
+    if (hasCellHighlight) {
+      return {
+        condition: {
+          test: `datum.strategy === '${hlStrategy}' && datum.dataset === '${hlDataset}'`,
+          value: "#1c2732"
+        },
+        value: null
+      };
+    }
+    return { value: null };
+  };
+
+  const buildPointStrokeWidth = () => {
+    if (hasCellHighlight) {
+      return {
+        condition: {
+          test: `datum.strategy === '${hlStrategy}' && datum.dataset === '${hlDataset}'`,
+          value: 2.5
+        },
+        value: 0
+      };
+    }
+    return { value: 0 };
+  };
+
+  const lineOpacity = buildLineOpacity();
+  const pointOpacity = buildPointOpacity();
 
   return {
     $schema: "https://vega.github.io/schema/vega-lite/v5.json",
@@ -311,7 +437,7 @@ const buildLineChartSpec = (data, metricKey, chartWidth, activeBackbone) => {
             field: "dataset",
             type: "nominal",
             title: "Dataset",
-            scale: { scheme: "tableau10" }
+            scale: { domain: colorDomain, range: colorRange }
           },
           detail: [
             { field: "dataset", type: "nominal" },
@@ -327,18 +453,6 @@ const buildLineChartSpec = (data, metricKey, chartWidth, activeBackbone) => {
         }
       },
       {
-        // Base points layer with hover selection
-        params: [
-          {
-            name: "hoveredPoint",
-            select: {
-              type: "point",
-              fields: ["strategy", "dataset"],
-              on: "pointerover",
-              clear: "pointerout"
-            }
-          }
-        ],
         mark: { type: "point", filled: true, size: 80 },
         encoding: {
           x: {
@@ -353,7 +467,7 @@ const buildLineChartSpec = (data, metricKey, chartWidth, activeBackbone) => {
           color: {
             field: "dataset",
             type: "nominal",
-            scale: { scheme: "tableau10" },
+            scale: { domain: colorDomain, range: colorRange },
             legend: null
           },
           shape: {
@@ -366,18 +480,9 @@ const buildLineChartSpec = (data, metricKey, chartWidth, activeBackbone) => {
             }
           },
           opacity: pointOpacity,
-          size: {
-            condition: { param: "hoveredPoint", value: 220 },
-            value: hasBackboneHighlight ? 60 : 80
-          },
-          stroke: {
-            condition: { param: "hoveredPoint", value: "#1c2732" },
-            value: null
-          },
-          strokeWidth: {
-            condition: { param: "hoveredPoint", value: 2 },
-            value: 0
-          },
+          size: buildPointSize(),
+          stroke: buildPointStroke(),
+          strokeWidth: buildPointStrokeWidth(),
           tooltip: [
             { field: "strategy", type: "nominal", title: "Strategy" },
             { field: "dataset", type: "nominal", title: "Dataset" },
@@ -401,72 +506,59 @@ const renderLineChart = (rows, metricKey = "test_acc", activeBackbone = null) =>
 
   if (!rows.length) {
     chartElement.textContent = "No data available for chart.";
-    interactionState.vegaView = null;
     return;
   }
 
   const data = buildLineChartData(rows, metricKey);
   if (!data.length) {
     chartElement.textContent = "No data available for chart.";
-    interactionState.vegaView = null;
     return;
   }
 
-  const spec = buildLineChartSpec(data, metricKey, chartElement.clientWidth - 40, activeBackbone);
+  // Store initial width on first render, reuse to prevent shrinking
+  if (interactionState.chartWidth == null) {
+    interactionState.chartWidth = chartElement.clientWidth - 40;
+  }
+  const chartWidth = interactionState.chartWidth;
+
+  const spec = buildLineChartSpec(data, metricKey, chartWidth, activeBackbone);
 
   embed(chartElement, spec, { actions: { source: false, compiled: false, editor: false } })
-    .then((result) => {
-      interactionState.vegaView = result.view;
-    })
     .catch((error) => {
       console.error("Failed to render line chart", error?.message ?? error);
       chartElement.textContent = "Failed to render line chart.";
-      interactionState.vegaView = null;
     });
 };
 
-/* ── Highlight chart point from table hover ────────────────────────── */
-const highlightChartPoint = (strategy, datasetName) => {
-  const view = interactionState.vegaView;
-  if (!view) return;
+/* ── Highlight chart from table hover (re-renders with updated state) ── */
+let _highlightRenderPending = false;
+let _highlightRenderRows = null;
 
-  try {
-    if (!strategy || !datasetName) {
-      // Clear selection
-      view.signal("hoveredPoint_tuple", null);
-      view.signal("hoveredPoint", null);
-      view.runAsync();
-      return;
+const scheduleHighlightRender = (rows) => {
+  _highlightRenderRows = rows;
+  if (_highlightRenderPending) return;
+  _highlightRenderPending = true;
+  requestAnimationFrame(() => {
+    _highlightRenderPending = false;
+    if (_highlightRenderRows) {
+      renderLineChart(_highlightRenderRows, interactionState.currentMetric, interactionState.currentBackbone);
     }
+  });
+};
 
-    // Find data points matching our hover target
-    const allData = view.data("data_0");
-    if (!allData) return;
+const highlightChartPoint = (strategy, datasetName, rows) => {
+  const changed =
+    interactionState.highlightedStrategy !== strategy ||
+    interactionState.highlightedDataset !== datasetName;
+  if (!changed) return;
 
-    const matchingTuples = [];
-    allData.forEach((datum) => {
-      if (datum.strategy === strategy && datum.dataset === datasetName) {
-        matchingTuples.push({
-          values: [datum.strategy, datum.dataset],
-        });
-      }
-    });
+  interactionState.highlightedStrategy = strategy;
+  interactionState.highlightedDataset = datasetName;
+  if (rows) scheduleHighlightRender(rows);
+};
 
-    if (matchingTuples.length > 0) {
-      // Set selection to highlight matching points
-      view.signal("hoveredPoint_tuple", matchingTuples);
-      view.signal("hoveredPoint", {
-        vlPoint: { or: matchingTuples.map((t) => ({ strategy: t.values[0], dataset: t.values[1] })) },
-        fields: [
-          { field: "strategy", channel: "x", type: "E" },
-          { field: "dataset", channel: "color", type: "E" }
-        ]
-      });
-      view.runAsync();
-    }
-  } catch (err) {
-    // Silently handle signal errors - the chart may not have the signal yet
-  }
+const highlightChartDataset = (datasetName, rows) => {
+  highlightChartPoint(null, datasetName, rows);
 };
 
 /* ── Tabs ──────────────────────────────────────────────────────────── */
@@ -528,7 +620,7 @@ const renderTabs = (backbones, onSelect) => {
 };
 
 /* ── Table ─────────────────────────────────────────────────────────── */
-const renderTable = (rows, onChartUpdate) => {
+const renderTable = (rows, onChartUpdate, chartRows) => {
   const tableElement = document.querySelector("#data-table");
   if (!tableElement) return;
 
@@ -637,23 +729,29 @@ const renderTable = (rows, onChartUpdate) => {
     // Visual highlight on cell
     cell.getElement().classList.add("cell-hover-highlight");
 
-    // Highlight corresponding point in chart
-    highlightChartPoint(strategy, datasetName);
+    // Highlight corresponding point in chart (re-renders with greyed-out others)
+    highlightChartPoint(strategy, datasetName, chartRows);
   };
 
   const cellMouseLeave = (e, cell) => {
     cell.getElement().classList.remove("cell-hover-highlight");
-    highlightChartPoint(null, null);
+    highlightChartPoint(null, null, chartRows);
   };
 
   if (window.__tabulatorTable) {
+    // Re-register cell hover handlers (old ones are detached on setColumns)
+    window.__tabulatorTable.off("cellMouseEnter");
+    window.__tabulatorTable.off("cellMouseLeave");
+    window.__tabulatorTable.on("cellMouseEnter", cellMouseEnter);
+    window.__tabulatorTable.on("cellMouseLeave", cellMouseLeave);
+
     window.__tabulatorTable.setColumns(columns);
     window.__tabulatorTable.replaceData(tableRows);
-    window.__tabulatorTable.setPage(1);
     // Re-apply styles after data update
     setTimeout(() => {
       applyDatasetHeaderStyles();
       applyMetricHeaderStyles();
+      attachDatasetHeaderHoverHandlers(chartRows);
     }, 50);
     return;
   }
@@ -662,18 +760,17 @@ const renderTable = (rows, onChartUpdate) => {
   window.__tabulatorTable = new Tabulator(tableElement, {
     data: tableRows,
     layout: "fitColumns",
-    height: 360,
-    pagination: "local",
-    paginationSize: 8,
     columns,
-    cellMouseEnter,
-    cellMouseLeave,
   });
+
+  window.__tabulatorTable.on("cellMouseEnter", cellMouseEnter);
+  window.__tabulatorTable.on("cellMouseLeave", cellMouseLeave);
 
   // Apply styles once table is built
   window.__tabulatorTable.on("tableBuilt", () => {
     applyDatasetHeaderStyles();
     applyMetricHeaderStyles();
+    attachDatasetHeaderHoverHandlers(chartRows);
   });
 };
 
@@ -721,6 +818,29 @@ const applyMetricHeaderStyles = () => {
   });
 };
 
+/* ── Attach hover handlers to dataset column group headers ─────────── */
+const attachDatasetHeaderHoverHandlers = (chartRows) => {
+  const groupHeaders = document.querySelectorAll(".tabulator-col-group");
+  groupHeaders.forEach((el) => {
+    // Avoid attaching duplicate listeners
+    if (el._datasetHoverAttached) return;
+    el._datasetHoverAttached = true;
+
+    const titleEl = el.querySelector(":scope > .tabulator-col-content .tabulator-col-title");
+    const title = titleEl?.textContent?.trim();
+    if (!title) return;
+
+    el.addEventListener("mouseenter", () => {
+      if (!interactionState.visibleDatasets.has(title)) return;
+      highlightChartDataset(title, chartRows);
+    });
+
+    el.addEventListener("mouseleave", () => {
+      highlightChartDataset(null, chartRows);
+    });
+  });
+};
+
 /* ── Init ──────────────────────────────────────────────────────────── */
 const init = async () => {
   const tableElement = document.querySelector("#data-table");
@@ -728,7 +848,18 @@ const init = async () => {
   const resolvedUrl = resolveDataUrl(DATA_URL);
 
   try {
-    const dataframe = await dfd.readCSV(resolvedUrl);
+    const rawDataframe = await dfd.readCSV(resolvedUrl);
+
+    // Filter out excluded backbones
+    const backboneValues = rawDataframe["backbone"]?.values ?? [];
+    const keepIndices = [];
+    for (let i = 0; i < backboneValues.length; i += 1) {
+      if (!EXCLUDED_BACKBONES.has(backboneValues[i])) {
+        keepIndices.push(i);
+      }
+    }
+    const dataframe = rawDataframe.iloc({ rows: keepIndices });
+
     METRICS.forEach(({ key }) => {
       if (dataframe.columns.includes(key)) {
         dataframe.addColumn(key, toNumberSeries(dataframe[key]), { inplace: true });
@@ -736,6 +867,10 @@ const init = async () => {
     });
 
     const backbones = Array.from(dataframe["backbone"].unique().values).sort();
+
+    // Build fixed color map from ALL datasets so colors are stable
+    const allDatasetNames = Array.from(dataframe["dataset"].unique().values).sort();
+    interactionState.datasetColorMap = buildDatasetColorMap(allDatasetNames);
 
     const filterByBackbone = (frame, backbone) => {
       if (!backbone) return frame;
@@ -801,7 +936,7 @@ const init = async () => {
       const onChartUpdate = () => {
         renderLineChart(rows, interactionState.currentMetric, interactionState.currentBackbone);
       };
-      renderTable(rows, onChartUpdate);
+      renderTable(rows, onChartUpdate, rows);
       renderLineChart(rows, metric, interactionState.currentBackbone);
     };
 
