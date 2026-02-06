@@ -21,12 +21,7 @@
   "dependencies": {
     "danfojs": "^1.2.0",
     "parcel": "^2.16.4",
-    "tabulator-tables": "^6.2.5",
-    "vega": "^6.2.0",
-    "vega-embed": "^7.1.0",
-    "vega-lite": "^6.4.2",
-    "vega-themes": "^3.0.0",
-    "vega-tooltip": "^1.0.0"
+    "tabulator-tables": "^6.2.5"
   },
   "devDependencies": {
     "buffer": "^6.0.3",

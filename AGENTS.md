@@ -2,9 +2,8 @@
 
 This repo is a Parcel-powered frontend app for interactive tables and charts.
 It uses `tabulator-tables` for tables, `danfojs` for CSV parsing and
-transformations, and `vega-embed` + `vega-lite` for charts (if enabled). The
-environment is managed with `devenv` + `direnv` and packages are managed with
-`pnpm`.
+transformations, and `vega-embed` + `vega-lite` for charts. The environment is
+managed with `devenv` + `direnv` and packages are managed with `pnpm`.
 
 If you are an agent, follow the guidance below so your changes align with the
 current setup and tooling.
@@ -17,11 +16,13 @@ current setup and tooling.
 ## Build / Lint / Test Commands
 
 ### Dev server (Parcel)
-- `devenv shell -- pnpm dev`
+- `pnpm dev` (or `devenv shell -- pnpm dev` if not using direnv)
 - Starts Parcel with `src/index.html`.
+- Default URL: `http://localhost:1234`
+- Uses hot module reload; changes rebuild automatically.
 
 ### Production build (Parcel)
-- `devenv shell -- pnpm build`
+- `pnpm build` (or `devenv shell -- pnpm build`)
 - Outputs to `dist/`.
 
 ### Linting
@@ -36,17 +37,24 @@ current setup and tooling.
 ### Single test (current state)
 - Not applicable (no test runner).
 
-## Debugging (MCP)
-- When debugging in a browser, use MCP at `http://localhost:1234`.
+## Debugging
+- The app runs a persistent dev server (user keeps `pnpm dev` running).
+- Connect via Chrome DevTools MCP server to inspect/debug the live browser.
+- Do NOT start/stop the dev server during tasks; it's already running.
+- Check browser console for runtime errors (vega-embed, danfojs, tabulator).
+- Use browser DevTools to inspect chart rendering and table DOM structure.
 
-## Parcel + Vega Resolution Notes
-- `package.json` uses `alias` to point to ESM build entries:
-  - `vega-lite`: `vega-lite/build/index.js`
-  - `vega-themes`: `vega-themes/build/index.js`
-  - `vega-tooltip`: `vega-tooltip/build/index.js`
-  - `canvas`: `false` (prevents Node-only dependency in browser builds)
-  - `danfojs`: `danfojs/dist/danfojs-browser/src`
-- If you change Vega packages, keep these aliases in sync.
+## Vega + Parcel Setup (IMPORTANT)
+- **Vega packages are loaded via CDN** in `src/index.html`:
+  ```html
+  <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+  ```
+- Access via `window.vegaEmbed` in JS (not ES module import).
+- Do NOT import vega-embed directly; it causes Parcel resolution issues.
+- `package.json` aliases are for other Vega packages (themes, tooltip) but
+  vega-embed uses CDN to avoid bundler conflicts.
 
 ## Project Structure
 - `src/index.html`: minimal layout and DOM mount points.
@@ -59,7 +67,7 @@ current setup and tooling.
 
 ### Language and module system
 - Use plain JavaScript (no TypeScript in repo).
-- Use ES modules (`import`/`export`).
+- Use ES modules (`import`/`export`) for bundled code.
 - Prefer `const` and `let`; avoid `var`.
 
 ### Imports
@@ -67,9 +75,9 @@ current setup and tooling.
   1. Third-party CSS (e.g., Tabulator CSS)
   2. Third-party JS modules
   3. Local CSS
-  4. Local JS modules
-- Import Vega via `vega-embed/build/embed.js` to match Parcel resolution.
+  4. Local JS modules (if any)
 - Import Danfo as a module (`import * as dfd from "danfojs"`).
+- For Vega, use `const embed = window.vegaEmbed` after CDN loads.
 
 ### Formatting
 - Consistent 2-space indentation in JS and CSS.
@@ -81,6 +89,7 @@ current setup and tooling.
 - `camelCase` for variables and functions.
 - `PascalCase` for classes and constructor functions.
 - `kebab-case` for CSS class names.
+- SCREAMING_SNAKE_CASE for constants (e.g., `DATA_URL`, `METRICS`).
 - Use descriptive names for chart specs and table configs.
 
 ### Types and data handling
@@ -99,11 +108,18 @@ current setup and tooling.
 - Use user-facing placeholders like "Loading data..." and "No data available."
 
 ### Chart and table behavior
-- Keep chart specs immutable when possible; clone for updates.
+- Keep chart specs immutable when possible; rebuild for updates.
 - When updating charts based on table filters, use new data arrays.
 - Avoid re-instantiating heavy components in tight loops.
-- Destroy existing Tabulator instances before re-creating (`destroy()`).
+- Reuse existing Tabulator instances (`setColumns`, `replaceData`) instead of
+  destroying and recreating.
 - Use column groups for dataset-specific metric bundles (Acc/AUC/F1).
+
+### Vega-Lite chart specs
+- Use fixed width (e.g., `width: 800`) with `autosize: { type: "fit" }`.
+- Avoid `width: "container"` as it can cause 0-width rendering bugs.
+- Include tooltips with proper formatting (e.g., `.4f` for metrics).
+- Use semantic color schemes (`blues`, `greens`, etc.) for heatmaps.
 
 ### Table conventions
 - Keep the first column frozen for the primary identifier (e.g., `strategy`).
@@ -116,32 +132,30 @@ current setup and tooling.
 ### UI state and caching
 - Cache computed table rows per backbone tab to avoid repeated groupby work.
 - Keep tab UI state in the DOM (active class) rather than global flags.
-- Avoid storing large raw arrays on `window` except for Tabulator instances.
+- Store Tabulator instances on `window` for reuse (e.g., `window.__tabulatorTable`).
 
 ### CSS and UI
 - Keep all global styles in `src/styles.css`.
 - Use CSS variables defined in `:root` for colors and spacing.
 - Maintain responsive layout rules for <980px and <640px.
-- Tabs and pills use `border-radius: 999px` and match accent colors.
+- Tabs use `border-radius: 999px` and match accent colors.
+- Card class provides consistent padding, border, and shadow.
+- Avoid inline styles; extract to CSS classes for maintainability.
 
-## Data + CSV Usage (if adding)
+## Data + CSV Usage
 - Prefer `danfojs` for CSV parsing and transformations in the browser.
 - Use `dfd.readCSV()` and then coerce numeric columns explicitly.
-- Cache transformed data for reuse across UI tabs/filters.
+- Cache transformed data for reuse across UI tabs/filters (use Map).
 - Validate numeric fields before charting or table formatting.
 - Treat empty strings as missing values and render as `null`.
 - Keep metric column naming consistent (`test_acc`, `test_auc`, `test_f1_macro`).
-- Resolve CSV URLs via `import.meta.url` and Parcel import maps to avoid
-  fetching HTML instead of CSV in dev.
-
-## Danfo + Parcel Notes
-- Danfo is bundled via ESM import (`danfojs`) and increases bundle size.
-- Consider lazy-loading Danfo if bundle size or load time becomes an issue.
+- Resolve CSV URLs via `new URL(path, import.meta.url)` for Parcel compatibility.
 
 ## Parcel Asset Rules
 - Entry is `src/index.html`.
 - Use relative paths for assets referenced in HTML/CSS.
 - Avoid Node-only dependencies in browser code.
+- Clear `.parcel-cache` and `dist/` if build issues occur.
 
 ## Cursor / Copilot Rules
 - No Cursor rules found (`.cursor/rules/` or `.cursorrules` missing).
@@ -152,3 +166,11 @@ current setup and tooling.
 - Keep this document around ~150 lines.
 - Update commands and conventions whenever tooling changes.
 - If new scripts or packages are added, reflect them here.
+
+## Agent Workflow and Cleanup
+- **IMPORTANT:** Clean up after each feature implementation.
+- Remove unused code, CSS classes, and HTML elements.
+- Verify no dead code remains after refactoring.
+- Keep codebase lean and maintainable.
+- Only commit files tracked by git; ignore build artifacts.
+- Use `git ls-files` to verify what's tracked before cleanup.

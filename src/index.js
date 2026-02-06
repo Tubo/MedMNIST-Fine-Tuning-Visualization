@@ -3,6 +3,8 @@ import { TabulatorFull as Tabulator } from "tabulator-tables";
 import * as dfd from "danfojs";
 import "./styles.css";
 
+const embed = window.vegaEmbed;
+
 const DATA_URL = new URL("../data/all_datasets_summary.csv", import.meta.url);
 const METRICS = [
   { key: "test_acc", label: "Acc" },
@@ -158,6 +160,99 @@ const buildColumns = (datasets, datasetKeys, tableRows) => {
   });
 
   return columns;
+};
+
+const buildHeatmapData = (rows, metricKey) => {
+  const { datasets, datasetKeys, tableRows } = buildPivot(rows);
+  const heatmapData = [];
+
+  tableRows.forEach((row) => {
+    datasets.forEach((dataset) => {
+      const datasetKey = datasetKeys.get(dataset);
+      const metric = METRICS.find(({ key }) => key === metricKey);
+      if (!metric) return;
+
+      const fieldKey = `${datasetKey}__${metric.label.toLowerCase()}`;
+      const value = row[fieldKey];
+
+      if (Number.isFinite(value)) {
+        heatmapData.push({
+          strategy: row.strategy,
+          dataset,
+          value
+        });
+      }
+    });
+  });
+
+  return heatmapData;
+};
+
+const buildHeatmapSpec = (data, metricKey) => {
+  const metric = METRICS.find(({ key }) => key === metricKey);
+  const metricLabel = metric ? metric.label : "Metric";
+
+  return {
+    $schema: "https://vega.github.io/schema/vega-lite/v5.json",
+    width: 800,
+    height: 400,
+    autosize: { type: "fit", contains: "padding" },
+    data: { values: data },
+    mark: { type: "rect", tooltip: true },
+    encoding: {
+      x: {
+        field: "dataset",
+        type: "nominal",
+        title: "Dataset",
+        axis: { labelAngle: -45, labelLimit: 120 }
+      },
+      y: {
+        field: "strategy",
+        type: "nominal",
+        title: "Strategy"
+      },
+      color: {
+        field: "value",
+        type: "quantitative",
+        title: metricLabel,
+        scale: { scheme: "blues" },
+        legend: { orient: "right" }
+      },
+      tooltip: [
+        { field: "strategy", type: "nominal", title: "Strategy" },
+        { field: "dataset", type: "nominal", title: "Dataset" },
+        { field: "value", type: "quantitative", title: metricLabel, format: ".4f" }
+      ]
+    },
+    config: {
+      axis: { labelFontSize: 11, titleFontSize: 12 },
+      legend: { labelFontSize: 11, titleFontSize: 12 }
+    }
+  };
+};
+
+const renderHeatmap = (rows, metricKey = "test_acc") => {
+  const chartElement = document.querySelector("#heatmap-chart");
+  if (!chartElement) return;
+
+  if (!rows.length) {
+    chartElement.textContent = "No data available for heatmap.";
+    return;
+  }
+
+  const data = buildHeatmapData(rows, metricKey);
+  if (!data.length) {
+    chartElement.textContent = "No data available for heatmap.";
+    return;
+  }
+
+  const spec = buildHeatmapSpec(data, metricKey);
+
+  embed(chartElement, spec, { actions: { source: false, compiled: false, editor: false } })
+    .catch((error) => {
+      console.error("Failed to render heatmap", error);
+      chartElement.textContent = "Failed to render heatmap.";
+    });
 };
 
 const renderTabs = (backbones, onSelect) => {
@@ -334,8 +429,29 @@ const init = async () => {
       return dataCache.get(key);
     };
 
-    renderTabs(backbones, (backbone) => renderTable(getRows(backbone)));
-    renderTable(getRows(null));
+    let currentBackbone = null;
+    let currentMetric = "test_acc";
+
+    const updateViews = (backbone, metric) => {
+      const rows = getRows(backbone);
+      renderTable(rows);
+      renderHeatmap(rows, metric);
+    };
+
+    const metricSelector = document.querySelector("#metric-selector");
+    if (metricSelector) {
+      metricSelector.addEventListener("change", (event) => {
+        currentMetric = event.target.value;
+        updateViews(currentBackbone, currentMetric);
+      });
+    }
+
+    renderTabs(backbones, (backbone) => {
+      currentBackbone = backbone;
+      updateViews(backbone, currentMetric);
+    });
+    
+    updateViews(null, currentMetric);
   } catch (error) {
     console.error("Failed to load dataset", error);
     if (tableElement) {

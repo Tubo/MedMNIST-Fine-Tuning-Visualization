@@ -6,6 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Finetuning Results Studio</title>
   <link rel="stylesheet" href="./styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
 </head>
 
 <body>
@@ -14,6 +17,22 @@
       <div class="card">
         <div id="backbone-tabs" class="tab-bar"></div>
         <div id="data-table" class="table"></div>
+      </div>
+    </section>
+    <section class="grid">
+      <div class="card">
+        <div class="card-header">
+          <h3>Metric Heatmap</h3>
+          <div class="field">
+            <label for="metric-selector">Metric:</label>
+            <select id="metric-selector">
+              <option value="test_acc">Accuracy</option>
+              <option value="test_auc">AUC</option>
+              <option value="test_f1_macro">F1 Macro</option>
+            </select>
+          </div>
+        </div>
+        <div id="heatmap-chart" class="chart"></div>
       </div>
     </section>
   </main>

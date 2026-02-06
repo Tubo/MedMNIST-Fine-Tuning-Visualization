@@ -17,4 +17,5 @@ devenv.local.yaml
 node_modules/
 dist/
 build/
+tmp/
 .env
