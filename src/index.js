@@ -67,6 +67,10 @@ const interactionState = {
   // Current table-driven highlight state
   highlightedDataset: null,
   highlightedStrategy: null,
+  // Map dataset name → task type (e.g., "classification", "multilabel")
+  datasetTaskMap: new Map(),
+  // Set of dataset names where test_auc_macro was used instead of test_auc
+  datasetAucMacroSet: new Set(),
 };
 
 /* ── Helpers ───────────────────────────────────────────────────────── */
@@ -87,10 +91,11 @@ const resolveDataUrl = (defaultUrl) => {
 
 const toNumberSeries = (series) => {
   const values = series.values.map((value) => {
+    if (value === "" || value === null || value === undefined) return NaN;
     const numberValue = Number(value);
     return Number.isFinite(numberValue) ? numberValue : NaN;
   });
-  return new dfd.Series(values, { index: series.index });
+  return values;
 };
 
 /* ── Pivot ─────────────────────────────────────────────────────────── */
@@ -222,24 +227,40 @@ const buildColumns = (datasets, datasetKeys, tableRows, onDatasetToggle, onMetri
   datasets.forEach((dataset) => {
     const datasetKey = datasetKeys.get(dataset);
     const isHidden = !interactionState.visibleDatasets.has(dataset);
+    const task = interactionState.datasetTaskMap.get(dataset);
+    const headerTitle = task ? `${dataset} [${task}]` : dataset;
 
     columns.push({
-      title: dataset,
+      title: headerTitle,
       cssClass: `dataset-col-group${isHidden ? " dataset-hidden" : ""}`,
       headerClick: (e, column) => {
         e.stopPropagation();
         onDatasetToggle(dataset, column);
       },
-      columns: metricColumns.map(({ title, fieldSuffix }) => {
+      columns: metricColumns.filter(({ fieldSuffix }) => {
+        // For chestmnist, only show AUC (hide Acc and F1)
+        if (dataset === "chestmnist" && (fieldSuffix === "acc" || fieldSuffix === "f1")) {
+          return false;
+        }
+        return true;
+      }).map(({ title, fieldSuffix }, _i, filtered) => {
         const metricKey = METRIC_SUFFIX_TO_KEY[fieldSuffix];
         const isActiveMetric = metricKey === interactionState.currentMetric;
+        // Show "Macro AUC" for datasets that use test_auc_macro fallback
+        const colTitle = (fieldSuffix === "auc" && interactionState.datasetAucMacroSet.has(dataset))
+          ? "Macro AUC"
+          : title;
+        // If fewer sub-columns than normal, widen to fill the parent group
+        const colWidth = filtered.length < metricColumns.length
+          ? Math.floor((96 * metricColumns.length) / filtered.length)
+          : 96;
         return {
-          title,
+          title: colTitle,
           field: `${datasetKey}__${fieldSuffix}`,
           hozAlign: "right",
           sorter: "number",
           formatter: formatMetricWithHighlight,
-          width: 96,
+          width: colWidth,
           cssClass: `metric-col${isActiveMetric ? " metric-col-active" : ""}`,
           headerClick: (e, column) => {
             e.stopPropagation();
@@ -264,6 +285,9 @@ const buildLineChartData = (rows, metricKey) => {
 
     // Filter by visible datasets
     if (!interactionState.visibleDatasets.has(row.dataset)) return;
+
+    // chestmnist only has AUC; skip it for Acc and F1 metrics
+    if (row.dataset === "chestmnist" && (metricKey === "test_acc" || metricKey === "test_f1_macro")) return;
 
     const metricFieldKey = row.metricKeys?.[metricKey] ?? metricKey;
     const value = row[metricFieldKey];
@@ -781,11 +805,13 @@ const applyDatasetHeaderStyles = () => {
   const groupHeaders = document.querySelectorAll(".tabulator-col-group");
   groupHeaders.forEach((el) => {
     const titleEl = el.querySelector(":scope > .tabulator-col-content .tabulator-col-title");
-    const title = titleEl?.textContent?.trim();
-    if (!title) return;
+    const rawTitle = titleEl?.textContent?.trim();
+    if (!rawTitle) return;
+    // Strip task suffix (e.g., "bloodmnist [classification]" → "bloodmnist")
+    const datasetName = rawTitle.replace(/\s*\[.*\]$/, "");
 
     el.classList.add("dataset-col-group");
-    if (interactionState.visibleDatasets.has(title)) {
+    if (interactionState.visibleDatasets.has(datasetName)) {
       el.classList.remove("dataset-hidden");
     } else {
       el.classList.add("dataset-hidden");
@@ -827,12 +853,14 @@ const attachDatasetHeaderHoverHandlers = (chartRows) => {
     el._datasetHoverAttached = true;
 
     const titleEl = el.querySelector(":scope > .tabulator-col-content .tabulator-col-title");
-    const title = titleEl?.textContent?.trim();
-    if (!title) return;
+    const rawTitle = titleEl?.textContent?.trim();
+    if (!rawTitle) return;
+    // Strip task suffix (e.g., "bloodmnist [classification]" → "bloodmnist")
+    const datasetName = rawTitle.replace(/\s*\[.*\]$/, "");
 
     el.addEventListener("mouseenter", () => {
-      if (!interactionState.visibleDatasets.has(title)) return;
-      highlightChartDataset(title, chartRows);
+      if (!interactionState.visibleDatasets.has(datasetName)) return;
+      highlightChartDataset(datasetName, chartRows);
     });
 
     el.addEventListener("mouseleave", () => {
@@ -866,11 +894,51 @@ const init = async () => {
       }
     });
 
+    // Fall back to test_auc_macro where test_auc is missing (e.g., chestmnist)
+    // First, capture original test_auc values BEFORE the merge to detect which datasets needed the fallback
+    const datasetAucMacroSet = new Set();
+    if (dataframe.columns.includes("test_auc_macro")) {
+      dataframe.addColumn("test_auc_macro", toNumberSeries(dataframe["test_auc_macro"]), { inplace: true });
+      const aucValues = dataframe["test_auc"].values;
+      const aucMacroValues = dataframe["test_auc_macro"].values;
+      const dsValues = dataframe["dataset"].values;
+
+      // Detect datasets where ALL test_auc values are NaN (before merge)
+      const datasetHasAuc = new Set();
+      for (let i = 0; i < dsValues.length; i += 1) {
+        if (Number.isFinite(aucValues[i])) {
+          datasetHasAuc.add(dsValues[i]);
+        }
+      }
+      const allDs = new Set(dsValues);
+      allDs.forEach((ds) => {
+        if (!datasetHasAuc.has(ds)) datasetAucMacroSet.add(ds);
+      });
+
+      // Merge: where test_auc is NaN, use test_auc_macro
+      const mergedAuc = aucValues.map((v, i) =>
+        Number.isFinite(v) ? v : aucMacroValues[i]
+      );
+      dataframe.addColumn("test_auc", mergedAuc, { inplace: true });
+    }
+    interactionState.datasetAucMacroSet = datasetAucMacroSet;
+
     const backbones = Array.from(dataframe["backbone"].unique().values).sort();
 
     // Build fixed color map from ALL datasets so colors are stable
     const allDatasetNames = Array.from(dataframe["dataset"].unique().values).sort();
     interactionState.datasetColorMap = buildDatasetColorMap(allDatasetNames);
+
+    // Build dataset-to-task mapping (task is a dataset-level attribute)
+    const datasetTaskMap = new Map();
+    const datasetValues = dataframe["dataset"]?.values ?? [];
+    const taskValues = dataframe["task"]?.values ?? [];
+    for (let i = 0; i < datasetValues.length; i += 1) {
+      if (!datasetTaskMap.has(datasetValues[i]) && taskValues[i]) {
+        datasetTaskMap.set(datasetValues[i], String(taskValues[i]));
+      }
+    }
+    interactionState.datasetTaskMap = datasetTaskMap;
 
     const filterByBackbone = (frame, backbone) => {
       if (!backbone) return frame;
