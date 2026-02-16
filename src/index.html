@@ -12,11 +12,38 @@
 </head>
 
 <body>
+  <header class="paper-header">
+    <h1 class="paper-title">
+      Optimal Adaptation Depth for Medical Image Classification: Comparing Convolutional and
+      Transformer Architectures Across Fine-Tuning Strategies
+    </h1>
+    <p class="paper-authors">
+      Nicolo Pecco<sup>1,2,3</sup>, Amirali Khosravi<sup>3</sup>, Sahika Betul Yayli<sup>3</sup>,
+      Tubo Shi<sup>3</sup>, Elham Mahmoudi<sup>3</sup>, Allison Scarbrough<sup>3</sup>, Antonella
+      Castellano<sup>1,2</sup>, Andrea Falini<sup>1,2</sup>, Lorenzo Veronese<sup>4</sup>,
+      Pasquale Anthony Della Rosa<sup>2</sup>, Bradley Erickson<sup>3</sup>
+    </p>
+    <ol class="paper-affiliations">
+      <li>Vita-Salute San Raffaele University, Milan, Italy</li>
+      <li>Department of Neuroradiology and CERMAC IRCCS San Raffaele Hospital, Milan, Italy</li>
+      <li>Department of Radiology, Mayo Clinic, Rochester, MN, USA</li>
+      <li>
+        Department of Electronics, Information and Bioengineering, Politecnico di Milano, Milan,
+        Italy
+      </li>
+    </ol>
+  </header>
   <main class="content">
     <section class="grid">
       <div class="card">
         <div id="backbone-tabs" class="tab-bar"></div>
         <div id="data-table" class="table"></div>
+        <p class="figure-caption">
+          <span class="caption-label">Table:</span>
+          Mean test metrics (Acc, AUC, F1) across fine-tuning strategies by dataset. Values are
+          aggregated for the selected backbone; top-performing strategies within each
+          dataset-metric column are highlighted.
+        </p>
       </div>
     </section>
     <section class="grid">
@@ -36,6 +63,190 @@
           </div>
         </div>
         <div id="heatmap-chart" class="chart"></div>
+        <p class="figure-caption">
+          <span class="caption-label">Figure:</span>
+          Dataset-wise trends across fine-tuning strategies for DenseNet-121 and Swin-Tiny. Points
+          show mean test performance for each strategy, with datasets encoded by color. Backbone is
+          encoded by mark style (DenseNet-121: circles with solid lines; Swin-Tiny: squares with
+          dashed lines).
+        </p>
+      </div>
+    </section>
+    <section class="grid">
+      <div class="card">
+        <h3>Model Weights</h3>
+        <p class="weights-note">
+          Direct download links for each dataset and backbone from the Hugging Face repository.
+        </p>
+        <div class="weights-table-wrap">
+          <table class="weights-table">
+            <thead>
+              <tr>
+                <th>Dataset</th>
+                <th>Backbone</th>
+                <th>Weights</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td rowspan="2">bloodmnist</td>
+                <td>DenseNet-121</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/bloodmnist_densenet121.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td>Swin-Tiny</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/bloodmnist_swin_tiny_patch4_window7_224.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td rowspan="2">breastmnist</td>
+                <td>DenseNet-121</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/breastmnist_densenet121.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td>Swin-Tiny</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/breastmnist_swin_tiny_patch4_window7_224.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td rowspan="2">chestmnist</td>
+                <td>DenseNet-121</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/chestmnist_densenet121.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td>Swin-Tiny</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/chestmnist_swin_tiny_patch4_window7_224.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td rowspan="2">dermamnist</td>
+                <td>DenseNet-121</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/dermamnist_densenet121.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td>Swin-Tiny</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/dermamnist_swin_tiny_patch4_window7_224.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td rowspan="2">octmnist</td>
+                <td>DenseNet-121</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/octmnist_densenet121.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td>Swin-Tiny</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/octmnist_swin_tiny_patch4_window7_224.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td rowspan="2">organamnist</td>
+                <td>DenseNet-121</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/organamnist_densenet121.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td>Swin-Tiny</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/organamnist_swin_tiny_patch4_window7_224.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td rowspan="2">organcmnist</td>
+                <td>DenseNet-121</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/organcmnist_densenet121.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td>Swin-Tiny</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/organcmnist_swin_tiny_patch4_window7_224.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td rowspan="2">organsmnist</td>
+                <td>DenseNet-121</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/organsmnist_densenet121.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td>Swin-Tiny</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/organsmnist_swin_tiny_patch4_window7_224.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td rowspan="2">pathmnist</td>
+                <td>DenseNet-121</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/pathmnist_densenet121.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td>Swin-Tiny</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/pathmnist_swin_tiny_patch4_window7_224.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td rowspan="2">pneumoniamnist</td>
+                <td>DenseNet-121</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/pneumoniamnist_densenet121.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td>Swin-Tiny</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/pneumoniamnist_swin_tiny_patch4_window7_224.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td rowspan="2">retinamnist</td>
+                <td>DenseNet-121</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/retinamnist_densenet121.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td>Swin-Tiny</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/retinamnist_swin_tiny_patch4_window7_224.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td rowspan="2">tissuemnist</td>
+                <td>DenseNet-121</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/tissuemnist_densenet121.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+              <tr>
+                <td>Swin-Tiny</td>
+                <td><a class="btn-weight"
+                    href="https://huggingface.co/tubos/2026-fine-tuning-strategies/resolve/main/tissuemnist_swin_tiny_patch4_window7_224.tar.gz?download=true"
+                    target="_blank" rel="noopener noreferrer">Open Weights</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
   </main>
