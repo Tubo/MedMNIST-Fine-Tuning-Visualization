@@ -74,21 +74,6 @@ const interactionState = {
 };
 
 /* ── Helpers ───────────────────────────────────────────────────────── */
-const resolveDataUrl = (defaultUrl) => {
-  const importMap = document.querySelector('script[type="importmap"]');
-  if (!importMap) return defaultUrl.toString();
-
-  try {
-    const { imports } = JSON.parse(importMap.textContent);
-    if (!imports) return defaultUrl.toString();
-    const csvUrl = Object.values(imports).find((value) => value.endsWith(".csv"));
-    if (!csvUrl) return defaultUrl.toString();
-    return new URL(csvUrl, window.location.origin).toString();
-  } catch (error) {
-    return defaultUrl.toString();
-  }
-};
-
 const toNumberSeries = (series) => {
   const values = series.values.map((value) => {
     if (value === "" || value === null || value === undefined) return NaN;
@@ -873,7 +858,7 @@ const attachDatasetHeaderHoverHandlers = (chartRows) => {
 const init = async () => {
   const tableElement = document.querySelector("#data-table");
   if (tableElement) tableElement.textContent = "Loading data...";
-  const resolvedUrl = resolveDataUrl(DATA_URL);
+  const resolvedUrl = DATA_URL.toString();
 
   try {
     const rawDataframe = await dfd.readCSV(resolvedUrl);
