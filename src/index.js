@@ -35,6 +35,8 @@ const BACKBONE_SHAPES = {
 };
 
 const EXCLUDED_BACKBONES = new Set(["resnet18", "vit_base_patch16_224"]);
+const MOBILE_BREAKPOINT = 640;
+const TABLET_BREAKPOINT = 980;
 
 /* Stable color palette for datasets (tableau10 hex values) */
 const TABLEAU10 = [
@@ -60,8 +62,6 @@ const interactionState = {
   currentBackbone: null,
   // Reverse map: sanitized key → original dataset name
   datasetKeyToName: new Map(),
-  // Stored chart width to prevent shrinking on re-render
-  chartWidth: null,
   // Fixed color mapping: dataset name → color
   datasetColorMap: new Map(),
   // Current table-driven highlight state
@@ -81,6 +81,26 @@ const toNumberSeries = (series) => {
     return Number.isFinite(numberValue) ? numberValue : NaN;
   });
   return values;
+};
+
+const getResponsiveChartDimensions = (chartElement) => {
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1200;
+  const containerWidth =
+    chartElement.clientWidth || chartElement.parentElement?.clientWidth || 960;
+  const chartWidth = Math.max(280, Math.floor(containerWidth - 8));
+
+  let chartHeight = 780;
+  if (viewportWidth <= MOBILE_BREAKPOINT) {
+    chartHeight = 420;
+  } else if (viewportWidth <= TABLET_BREAKPOINT) {
+    chartHeight = 600;
+  }
+
+  return {
+    chartWidth,
+    chartHeight,
+    isMobile: viewportWidth <= MOBILE_BREAKPOINT,
+  };
 };
 
 /* ── Pivot ─────────────────────────────────────────────────────────── */
@@ -291,7 +311,14 @@ const buildLineChartData = (rows, metricKey) => {
 };
 
 /* ── Chart spec (with hover selection support) ─────────────────────── */
-const buildLineChartSpec = (data, metricKey, chartWidth, activeBackbone) => {
+const buildLineChartSpec = (
+  data,
+  metricKey,
+  chartWidth,
+  chartHeight,
+  activeBackbone,
+  isMobile,
+) => {
   const metric = METRICS.find(({ key }) => key === metricKey);
   const metricLabel = metric ? metric.label : "Metric";
 
@@ -422,7 +449,7 @@ const buildLineChartSpec = (data, metricKey, chartWidth, activeBackbone) => {
   return {
     $schema: "https://vega.github.io/schema/vega-lite/v5.json",
     width: chartWidth,
-    height: 800,
+    height: chartHeight,
     autosize: { type: "fit", contains: "padding" },
     data: { values: data },
     layer: [
@@ -434,7 +461,7 @@ const buildLineChartSpec = (data, metricKey, chartWidth, activeBackbone) => {
             type: "ordinal",
             title: "Strategy",
             scale: { domain: strategySort },
-            axis: { labelAngle: -45, labelLimit: 120 }
+            axis: { labelAngle: isMobile ? -35 : -45, labelLimit: isMobile ? 90 : 120 }
           },
           y: {
             field: "value",
@@ -483,6 +510,7 @@ const buildLineChartSpec = (data, metricKey, chartWidth, activeBackbone) => {
             field: "backbone",
             type: "nominal",
             title: "Backbone",
+            legend: isMobile ? null : { orient: "right" },
             scale: {
               domain: Object.keys(BACKBONE_SHAPES),
               range: Object.values(BACKBONE_SHAPES)
@@ -502,8 +530,14 @@ const buildLineChartSpec = (data, metricKey, chartWidth, activeBackbone) => {
       }
     ],
     config: {
-      axis: { labelFontSize: 11, titleFontSize: 12 },
-      legend: { labelFontSize: 11, titleFontSize: 12 }
+      axis: {
+        labelFontSize: isMobile ? 10 : 11,
+        titleFontSize: isMobile ? 11 : 12,
+      },
+      legend: {
+        labelFontSize: isMobile ? 10 : 11,
+        titleFontSize: isMobile ? 11 : 12,
+      },
     }
   };
 };
@@ -524,13 +558,16 @@ const renderLineChart = (rows, metricKey = "test_acc", activeBackbone = null) =>
     return;
   }
 
-  // Store initial width on first render, reuse to prevent shrinking
-  if (interactionState.chartWidth == null) {
-    interactionState.chartWidth = chartElement.clientWidth - 40;
-  }
-  const chartWidth = interactionState.chartWidth;
+  const { chartWidth, chartHeight, isMobile } = getResponsiveChartDimensions(chartElement);
 
-  const spec = buildLineChartSpec(data, metricKey, chartWidth, activeBackbone);
+  const spec = buildLineChartSpec(
+    data,
+    metricKey,
+    chartWidth,
+    chartHeight,
+    activeBackbone,
+    isMobile,
+  );
 
   embed(chartElement, spec, { actions: { source: false, compiled: false, editor: false } })
     .catch((error) => {
@@ -768,7 +805,7 @@ const renderTable = (rows, onChartUpdate, chartRows) => {
   tableElement.textContent = "";
   window.__tabulatorTable = new Tabulator(tableElement, {
     data: tableRows,
-    layout: "fitColumns",
+    layout: "fitDataTable",
     columns,
   });
 
@@ -992,6 +1029,29 @@ const init = async () => {
       renderTable(rows, onChartUpdate, rows);
       renderLineChart(rows, metric, interactionState.currentBackbone);
     };
+
+    let resizeRenderPending = false;
+    const scheduleResponsiveRender = () => {
+      if (resizeRenderPending) return;
+      resizeRenderPending = true;
+      requestAnimationFrame(() => {
+        resizeRenderPending = false;
+        const rows = getRows(interactionState.currentBackbone);
+        if (window.__tabulatorTable) {
+          window.__tabulatorTable.redraw(true);
+        }
+        renderLineChart(rows, interactionState.currentMetric, interactionState.currentBackbone);
+      });
+    };
+
+    const chartElement = document.querySelector("#heatmap-chart");
+    if (chartElement && "ResizeObserver" in window) {
+      const chartResizeObserver = new ResizeObserver(() => {
+        scheduleResponsiveRender();
+      });
+      chartResizeObserver.observe(chartElement);
+    }
+    window.addEventListener("resize", scheduleResponsiveRender);
 
     /* ── Metric selector dropdown ────────────────────────────────────── */
     const metricSelector = document.querySelector("#metric-selector");

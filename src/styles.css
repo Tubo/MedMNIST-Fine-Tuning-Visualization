@@ -98,12 +98,15 @@ select {
   border: 1px solid var(--border);
   padding: 18px 20px 20px;
   box-shadow: var(--shadow);
+  min-width: 0;
 }
 
 .card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-bottom: 12px;
 }
 
@@ -195,6 +198,11 @@ select {
 
 .chart {
   min-height: 320px;
+  width: 100%;
+}
+
+.chart .vega-embed {
+  width: 100%;
 }
 
 .figure-caption {
@@ -212,7 +220,15 @@ select {
 
 .table {
   border-radius: 12px;
-  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table .tabulator {
+  min-width: 920px;
 }
 
 .tab-bar {
@@ -280,6 +296,8 @@ select {
   display: flex;
   gap: 12px;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .btn-reset {
@@ -371,6 +389,10 @@ select {
     font-size: 0.83rem;
   }
 
+  .table .tabulator {
+    min-width: 780px;
+  }
+
   .content {
     padding: 20px;
   }
@@ -392,5 +414,31 @@ select {
 
   .weights-note {
     font-size: 0.83rem;
+  }
+
+  .card-header {
+    align-items: flex-start;
+  }
+
+  .controls {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .card-header .field {
+    width: 100%;
+  }
+
+  .card-header .field select {
+    width: 100%;
+  }
+
+  .table .tabulator {
+    min-width: 680px;
+  }
+
+  .chart {
+    min-height: 280px;
   }
 }
